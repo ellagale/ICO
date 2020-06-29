@@ -1,4 +1,8 @@
 import numpy as np
+import matplotlib
+import matplotlib.pyplot
+import mpl_toolkits.mplot3d
+import stl
 from skspatial.objects import Point
 from scipy.constants import golden
 from face import Face
@@ -32,10 +36,6 @@ class Ico(object):
         Level indicates how many subdivisions to make, 0 (default) will give you an icosohedron.
         All icospheres are centred around the origin with a cicumradius of 1
         """
-
-        
-
-
         self.faces = [
                 # Top row, around point 1
                 Face(_points[0], _points[8], _points[1]),
@@ -71,6 +71,13 @@ class Ico(object):
         for face in self.faces:
             face.create_children(level)
 
+
+    def draw(self, filename="output.png"):
+        """ Draw the Ico in 3d
+        I've no idea what parameters, so let's hardcode for now.
+        """
+        figure = matplotlib.pyplot.figure()
+        axes = mpl_toolkits.mplot3d.Axes3D(figure)
 
 
 
