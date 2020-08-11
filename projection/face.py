@@ -18,14 +18,14 @@ class _FaceIter(object):
         if self.n >= self.face_count:
             raise StopIteration
         # Handle edge case of lone face
-        if not self.children:
+        if not self.face.children:
             self.n += 1
             return self
         # Pick the next child to take from.
         child = self.n % 4
         child_idx = self.n // 4
         self.n += 1
-        return self.children[child].get_face(child_idx)
+        return self.face.children[child].get_face(child_idx)
         
 
 
@@ -106,3 +106,6 @@ class Face(object):
 
     def __iter__(self):
         return _FaceIter(self)
+
+    def get_faces(self):
+        return [ f for f in self]
