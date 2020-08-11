@@ -90,6 +90,12 @@ class Face(object):
         child_idx = idx // 4
         return self.children[child].get_face(child_idx)
 
+    def export_for_sphere_CNN(self):
+        """
+
+        :return:
+        """
+        pass
 
     def get_depth_remaining(self):
         """ Returns the depth of this face.

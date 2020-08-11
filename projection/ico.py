@@ -79,7 +79,47 @@ class Ico(object):
         figure = matplotlib.pyplot.figure()
         axes = mpl_toolkits.mplot3d.Axes3D(figure)
 
+    def determining_row_of_upright_triangles(net, row_no, no_of_cols, your_mesh, verbose=True):
+        for i in range(no_of_cols):
+            if i == no_of_cols - 1:
+                # last triangle, you gotta loop it
+                top_left = your_mesh.vectors[net[row_no - 2, i]]
+                top_right = your_mesh.vectors[net[row_no - 2, 0]]  ## LOOPED!
+                bottom_left = your_mesh.vectors[net[row_no - 1, i]]
+            else:
+                top_left = your_mesh.vectors[net[row_no - 2, i]]
+                top_right = your_mesh.vectors[net[row_no - 2, i + 1]]
+                bottom_left = your_mesh.vectors[net[row_no - 1, i]]
+            chosen_point = np.array(list(
+                set([tuple(x) for x in bottom_left]) & set([tuple(x) for x in top_right]) & set(
+                    [tuple(x) for x in top_left])))
+            neighbours = [x for (x, y) in enumerate(your_mesh.vectors) if np.all(np.isin(chosen_point, y))]
+            if verbose:
+                print("working off: {}".format(chosen_point))
+                print('Between: {},\n {}\n and {}\n'.format(top_left, top_right, bottom_left))
+                print("Found neighbours of point are: {} ".format(neighbours))
+            next_triangle_index = [x for x in neighbours if x not in net][0]
+            if verbose:
+                print("Assigned triangle {}".format(next_triangle_index))
+            net[row_no, i] = next_triangle_index
+            triangle_indices_not_yet_assigned = set(all_triangle_indices) ^ set(net.flatten())
+        if verbose:
+            print("{} triangles assigned".format(net[row_no, :]))
+            print("triangle indices left to assign are:\n{}".format(triangle_indices_not_yet_assigned))
+        return net, triangle_indices_not_yet_assigned
 
+    # row_no = 1
+    # col_no=0
 
+    def export_for_sphere_CNN(self):
+        """
+
+        :return: an array of the values suitible for inputting into SphereCNN
+        """
+        result = []
+        for face in self.faces:
+            # TODO: Compact layers 2,3 into one.
+            result += face.export_for_sphere_CNN()
+        return result
 
 
