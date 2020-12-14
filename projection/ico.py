@@ -1,125 +1,178 @@
-import numpy as np
 import matplotlib
-import matplotlib.pyplot
-import mpl_toolkits.mplot3d
-import stl
-from skspatial.objects import Point
-from scipy.constants import golden
-from face import Face
+import functools
+import operator
+from operator import attrgetter
 
-_unit_length = np.sqrt(1+(golden*golden))
-# the two distances we need for the coordinates.
-_c1 = 1 / _unit_length
-_c2 = golden / _unit_length
-# The points that make up an icosahedron in space, circumradius 1, centered around 0,0,0
-_points = [
-        Point([-_c1,  _c2,   0]),
-        Point([ _c1,  _c2,   0]),
-        Point([ _c1, -_c2,   0]),
-        Point([-_c1, -_c2,   0]),
-        Point([-_c2,   0, -_c1]),
-        Point([ _c2,   0, -_c1]),
-        Point([ _c2,   0,  _c1]),
-        Point([-_c2,   0,  _c1]),
-        Point([  0,  _c1, -_c2]),
-        Point([  0,  _c1,  _c2]),
-        Point([  0, -_c1,  _c2]),
-        Point([  0, -_c1, -_c2])
-        ]
+
+import matplotlib.pyplot
+import mpl_toolkits.mplot3d.art3d
+
+from skspatial.objects import Vector
+
+from projection import topface
+from projection.topface import TopFace
+
 
 class Ico(object):
     """A class to define an icsahedron or icosphere.
     """
 
-    def __init__(self, level=0):
+    def _add_molecule(self, molecule):
+        """ Add a molecule to the ico, marking each face nearest each atom
+        """
+        for idx, location in enumerate(molecule.coords):
+            self._add_atom(Vector(location), idx)
+
+    def __init__(self, molecule, level=0):
         """ Create a new icosphere.
         Level indicates how many subdivisions to make, 0 (default) will give you an icosohedron.
         All icospheres are centred around the origin with a cicumradius of 1
         """
+        self.molecule = molecule
         self.faces = [
-                # Top row, around point 1
-                Face(_points[0], _points[8], _points[1]),
-                Face(_points[8], _points[5], _points[1]),
-                Face(_points[5], _points[6], _points[1]),
-                Face(_points[6], _points[9], _points[1]),
-                Face(_points[9], _points[0], _points[1]),
-                # Row 2
-                Face(_points[0], _points[4], _points[8]),
-                Face(_points[8], _points[11], _points[5]),
-                Face(_points[5], _points[2], _points[6]),
-                Face(_points[6], _points[10], _points[9]),
-                Face(_points[9], _points[7], _points[0]),
-                # Row 3
-                Face(_points[8], _points[4], _points[11]),
-                Face(_points[5], _points[11], _points[2]),
-                Face(_points[6], _points[2], _points[10]),
-                Face(_points[9], _points[10], _points[7]),
-                Face(_points[0], _points[7], _points[4]),
-                # Bottom row, around point 3
-                Face(_points[4], _points[3], _points[11]),
-                Face(_points[11], _points[3], _points[2]),
-                Face(_points[2], _points[3], _points[10]),
-                Face(_points[10], _points[3], _points[7]),
-                Face(_points[7], _points[3], _points[4])
-                ]
+            # Top row, around point 1
+            TopFace(molecule, 0, 1, 8),
+            TopFace(molecule, 8, 1, 5),
+            TopFace(molecule, 5, 1, 6),
+            TopFace(molecule, 6, 1, 9),
+            TopFace(molecule, 9, 1, 0),
+            # Row 2
+            TopFace(molecule, 0, 8, 4),
+            TopFace(molecule, 8, 5, 11),
+            TopFace(molecule, 5, 6, 2),
+            TopFace(molecule, 6, 9, 10),
+            TopFace(molecule, 9, 0, 7),
+            # Row 3
+            TopFace(molecule, 4, 8, 11),
+            TopFace(molecule, 11, 5, 2),
+            TopFace(molecule, 2, 6, 10),
+            TopFace(molecule, 10, 9, 7),
+            TopFace(molecule, 7, 0, 4),
+            # Bottom row, around point 3
+            TopFace(molecule, 4, 11, 3),
+            TopFace(molecule, 11, 2, 3),
+            TopFace(molecule, 2, 10, 3),
+            TopFace(molecule, 10, 7, 3),
+            TopFace(molecule, 7, 4, 3)
+        ]
+
+        # Now create a dictionary of which faces have which edge and
+        # one of which faces have which point
+        self.edge_mappings = {}
+        self.point_mappings = {}
+        for face in self.faces:
+            for edge in face.get_edges():
+                try:
+                    self.edge_mappings[edge].append(face)
+                except KeyError:
+                    self.edge_mappings[edge] = [face]
+            for idx in face.get_point_indices():
+                try:
+                    self.point_mappings[idx].append(face)
+                except KeyError:
+                    self.point_mappings[idx] = [face]
+
+        # Use this to tell each face what its neighbours are
+        for idx in self.edge_mappings:
+            if len(self.edge_mappings[idx]) != 2:
+                print("{}:{}".format(idx, self.edge_mappings[idx]))
+            assert (len(self.edge_mappings[idx]) == 2)
+            l, r = self.edge_mappings[idx]
+            l.neighbours.append(r)
+            r.neighbours.append(l)
 
         # now perform the subdivisions
         # conditional isn't needed, but why waste the time?
-        if level==0:
+        if level == 0:
             return
 
         for face in self.faces:
             face.create_children(level)
 
+        self._add_molecule(self.molecule)
 
-    def draw(self, filename="output.png"):
-        """ Draw the Ico in 3d
-        I've no idea what parameters, so let's hardcode for now.
+    def get_mesh(self):
+        """ return the mesh for this object
         """
+        return functools.reduce(operator.add, [f.get_mesh() for f in self.faces])
+
+    def _draw_init(self):
+        self._figure = matplotlib.pyplot.figure()
+        self._axes = mpl_toolkits.mplot3d.Axes3D(self._figure)
+        # self._mesh = i3.get_mesh()
+        self._mesh = self.get_mesh()
+
+    def _draw_3d(self, a, b):
+        """Draw a single 3d frame
+            a,b : angles to rotate the view by
+        """
+        # Load the stuff
+        self._axes.add_collection3d(mpl_toolkits.mplot3d.art3d.Line3DCollection(self._mesh))
+        self._axes.scatter(self.molecule.coords[:, 0], self.molecule.coords[:, 1], self.molecule.coords[:, 2],
+                           c=self.molecule.colour_list)
+        scale = topface.get_scale()
+        self._axes.auto_scale_xyz(scale, scale, scale * 1.25)
+        self._axes.view_init(a, b)
+        # axes.scatter(coords[:,0],coords[:,1],coords[:,2],c=colours)
+        matplotlib.pyplot.draw()
+
+    def draw3D(self, a=15, b=30):
+        """Quick function to draw a single frame
+        """
+        self._draw_init()
+        self._draw_3d(a, b)
+
+    def plot2D(self, first_face=0, point_idx=0):
+        """Unwrap the icosphere, starting with the specified face, with the indicated point on the top
+        """
+        # Make sure the request makes sense.
+        if first_face < 0 or first_face >= 20 or point_idx < 0 or point_idx >= 3:
+            raise ValueError("Face needs to be in range 0..20, point 0..2")
+        # clear any grid from previous runs
+        for f in self.faces:
+            f.clear_grid()
+
+        self.faces[first_face].set_grid(point_idx)
+
+        # Now recalculate the grid
+        for face in self.faces:
+            face.plot2D()
+
+    def draw2D(self, first_face=0, point_idx=0):
+        """Unwrap the ico and draw it,
+        starting with the specified face, with the demarked point up
+        """
+        # do the plotting
+        self.plot2D(first_face, point_idx)
+
+        # set up the image
         figure = matplotlib.pyplot.figure()
-        axes = mpl_toolkits.mplot3d.Axes3D(figure)
+        matplotlib.pyplot.axis('equal')
+        # matplotlib.pyplot.axis('off')
 
-    def determining_row_of_upright_triangles(net, row_no, no_of_cols, your_mesh, verbose=True):
-        for i in range(no_of_cols):
-            if i == no_of_cols - 1:
-                # last triangle, you gotta loop it
-                top_left = your_mesh.vectors[net[row_no - 2, i]]
-                top_right = your_mesh.vectors[net[row_no - 2, 0]]  ## LOOPED!
-                bottom_left = your_mesh.vectors[net[row_no - 1, i]]
-            else:
-                top_left = your_mesh.vectors[net[row_no - 2, i]]
-                top_right = your_mesh.vectors[net[row_no - 2, i + 1]]
-                bottom_left = your_mesh.vectors[net[row_no - 1, i]]
-            chosen_point = np.array(list(
-                set([tuple(x) for x in bottom_left]) & set([tuple(x) for x in top_right]) & set(
-                    [tuple(x) for x in top_left])))
-            neighbours = [x for (x, y) in enumerate(your_mesh.vectors) if np.all(np.isin(chosen_point, y))]
-            if verbose:
-                print("working off: {}".format(chosen_point))
-                print('Between: {},\n {}\n and {}\n'.format(top_left, top_right, bottom_left))
-                print("Found neighbours of point are: {} ".format(neighbours))
-            next_triangle_index = [x for x in neighbours if x not in net][0]
-            if verbose:
-                print("Assigned triangle {}".format(next_triangle_index))
-            net[row_no, i] = next_triangle_index
-            triangle_indices_not_yet_assigned = set(all_triangle_indices) ^ set(net.flatten())
-        if verbose:
-            print("{} triangles assigned".format(net[row_no, :]))
-            print("triangle indices left to assign are:\n{}".format(triangle_indices_not_yet_assigned))
-        return net, triangle_indices_not_yet_assigned
+        for f in self.faces:
+            f.draw2D(figure)
+        matplotlib.pyplot.autoscale(enable=True, axis='both')
 
-    # row_no = 1
-    # col_no=0
+        matplotlib.pyplot.draw()
 
-    def export_for_sphere_CNN(self):
-        """
+    def _add_atom(self, location, idx):
+        best_face = None
+        best_angle = None
+        for face in self.faces:
+            angle = location.angle_between(face.normal)
+            if best_face is None or angle < best_angle:
+                best_face = face
+                best_angle = angle
+        best_face.add_atom(location, idx)
 
-        :return: an array of the values suitible for inputting into SphereCNN
+    def get_face_list(self):
+        """ Returns a list of the leaf faces in the Icosphere
         """
         result = []
-        for face in self.faces:
-            # TODO: Compact layers 2,3 into one.
-            result += face.export_for_sphere_CNN()
+        partial_list = sorted(self.faces, key=attrgetter('midpoint_x'))
+        ordered_faces = sorted(partial_list, key=attrgetter('midpoint_y'), reverse=True)
+
+        for face in ordered_faces:
+            result += face.get_ordered_leaf_faces()
         return result
-
-
