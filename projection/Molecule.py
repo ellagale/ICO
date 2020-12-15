@@ -62,6 +62,7 @@ class Molecule(object):
         """
         # Parse the molecule
         base_m = rdkit.Chem.MolFromSmiles(smiles_string, sanitize=sanitize)
+        base_m.UpdatePropertyCache()
         rdkit.Chem.AllChem.EmbedMolecule(base_m)
         # Add the hydrogens
         molecule = rdkit.Chem.AddHs(base_m)
