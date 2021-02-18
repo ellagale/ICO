@@ -7,7 +7,11 @@ class Mol2Molecule(Molecule):
     """ Holds a molecule
     """
 
-    def __init__(self, file_location, sanitize=False):
+    def __init__(self, file_location,
+                 sanitize=False,
+                 do_random_rotation=False,
+                 rotation_vector=[],
+                 verbose=False):
         """ Factory method to build a molecule from a smiles string.
         file_location is the location of hte file to read in on disk
     """
@@ -26,7 +30,7 @@ class Mol2Molecule(Molecule):
         # get a conformer, any conformer and parse it.
         self.conformer = molecule.GetConformer()
         rdkit.Chem.rdMolTransforms.CanonicalizeConformer(self.conformer)
-        self._parse_conformer()
+        self._parse_conformer(do_random_rotation=do_random_rotation, rotation_vector=rotation_vector,verbose=verbose)
 
         atom_count = self.conformer.GetNumAtoms()
 
