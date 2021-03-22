@@ -29,7 +29,7 @@ save_dir=r'F:\Nextcloud\science\Datasets\icostar_processed'
 data_dir=r'F:\Nextcloud\science\Datasets\icostar_processed'
 
 #train_filename = '2021_PDBBind_core_augmented_div4.hdf5'
-train_filename = "TEST2.hdf5" #'Delaney_augmented_expanded.hdf5'#
+train_filename = "Delaney_augmented_expanded.hdf5"# "TEST2.hdf5" #'Delaney_augmented_expanded.hdf5'#
 outfile=train_filename
 test_filename = ''
 do_test = False
