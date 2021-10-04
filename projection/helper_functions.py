@@ -5,6 +5,7 @@ from collections import Counter
 
 import numpy as np
 import pandas as pd
+from rdkit.Chem import PandasTools
 import matplotlib
 import matplotlib.pyplot
 import matplotlib.tri
@@ -31,6 +32,7 @@ from IPython.display import HTML
 
 import projection
 from projection.molecule import Molecule
+import projection.sdf_molecule
 from projection.face import Face
 
 from projection.ico import Ico
@@ -55,6 +57,19 @@ def basic_info_hdf5_dataset(hf, label='molID'):
         num_of_augments=[x for x in egg.keys()][0]
         print(f'num_of_augments is:\t{num_of_augments}')
     return num_of_rows, num_of_molecules, num_of_augments
+
+def Load_SDF_Files(sdf_file):
+    """Loads SDF files using pandas and some sensible settings"""
+    PandasTools.ChangeMoleculeRendering(renderer='String')
+    frame = PandasTools.LoadSDF(
+        sdf_file,
+        smilesName='SMILES',
+        molColName='Molecule',
+        includeFingerprints=True,
+        removeHs=False,
+        strictParsing=True,
+        embedProps=True )
+    return frame
 
 def normalize(x, axis=-1, order=2):
   """Normalizes a Numpy array. L2 normalisation
@@ -659,3 +674,285 @@ def Create_Diff_Conformer_Dataset_From_SMILES(DIVISION,
     # outfile_expanded.close()
     i.draw2D()
     return
+
+
+
+
+def create_diff_conformer_dataset_from_QM7(
+        DIVISION,
+        df,
+        frame,
+        save_dir,
+        data_dir,
+        out_filename,
+        do_Hdonors,
+         ico_key_name,
+        num_of_molecules_override=0,
+        NUM_MAPS_PER_MOLECULE=60,
+        sanitize=True,
+        SMILES_array=[],
+        num_out_files=1,
+        extra_augmentation='conformer',
+        verbose=False):
+    """ Creates the dataset as a hdf5 file
+    QM7 has both smiles and 3d coords
+    DIVISION =4 # for the size of icospehre
+    save_dir=r'C:\\Users\\ella_\\Nextcloud\\science\\Datasets\\converted_pdbbind\\v2015'
+    data_dir=r'C:\\Users\\ella_\\Nextcloud\\science\\Datasets\\pdbbind\\v2015'
+    out_filename = "PDBBindLigands_core_augmented_withHs_withHdonors_div4.hdf5"
+    do_Hdonors = True/False, whether to do the H donor data or not, don't do it for proteins
+    ico_key_name_name = "icosahedron_level4"
+    num_of_molecules_override: 0, how many molecules to do, a setting of 0 does all of them
+    NUM_MAPS_PER_MOLECULE # how many maps to create, anything over 60 will be augmented
+    sanitize=True
+    SMILES_array= an array of smiles, set this up from df or fix this
+    num_out_files=1 not yet implemented
+    extra_augmentation='conformer' other options not yet implemented!
+    verbose=False
+    """
+    if True:
+        if num_of_molecules_override == 0:
+            # do all smiles woo
+            Num_of_molecules= len(SMILES_array)
+        else:
+            Num_of_molecules = num_of_molecules_override
+
+        smiles_count = Num_of_molecules
+        smile_count = Num_of_molecules # yeah i know, is hacky
+
+        if DIVISION == 1:
+            NUM_FACES = 80
+        elif DIVISION == 2:
+            NUM_FACES = 320
+        elif DIVISION == 3:
+            NUM_FACES = 1280
+        elif DIVISION == 4:
+            NUM_FACES = 5120
+
+        if NUM_MAPS_PER_MOLECULE == 1:
+            NUM_UNWRAPPINGS_TO_DO = 1
+            NUM_DIRECTIONS_TO_DO = 1
+            NUM_EXTRA_MAPS_PER_MOLECULE = 0
+        elif NUM_MAPS_PER_MOLECULE == 60:
+            NUM_UNWRAPPINGS_TO_DO = 20
+            NUM_DIRECTIONS_TO_DO = 3
+            NUM_EXTRA_MAPS_PER_MOLECULE = 0
+        elif NUM_MAPS_PER_MOLECULE > 60:
+            # Currently assumes you want 60 plus extra
+            NUM_UNWRAPPINGS_TO_DO = 20
+            NUM_DIRECTIONS_TO_DO = 3
+            NUM_EXTRA_MAPS_PER_MOLECULE = NUM_MAPS_PER_MOLECULE-60
+            if verbose:
+                print('Doing {} extra maps using {}s'.format(
+                    NUM_EXTRA_MAPS_PER_MOLECULE,
+                    extra_augmentation))
+
+        if sanitize:
+            print('Warning! Sanitize seems to muck up the structures, especially for protiens')
+            print('Is good for SMILES string input however')
+            print('Will override sanitize option for the 3D structures')
+
+        outfile = h5py.File(os.path.join(save_dir,out_filename),"w")
+        #if NUM_EXTRA_MAPS_PER_MOLECULE > 0:
+        #    outfile_expanded = h5py.File(os.path.join(save_dir,out_filename + '_extra_' + extra_augmentation),"w")
+        string_type = h5py.string_dtype(encoding='utf-8')
+        icosahedron_name = ico_key_name
+
+        ##################### set up the out put datasets ################################
+        ## this sets up the output datasets
+        icosahedron_ds =  outfile.create_dataset(icosahedron_name, (smile_count*NUM_MAPS_PER_MOLECULE, NUM_FACES, 3))
+        ## from the dataset
+        u0_atom_ds = outfile.create_dataset('u0_atom', (smile_count*NUM_MAPS_PER_MOLECULE,))
+        compound_id_ds = outfile.create_dataset('Compound ID', (smile_count*NUM_MAPS_PER_MOLECULE,), dtype=string_type)
+        smiles_ds = outfile.create_dataset('smiles', (smile_count*NUM_MAPS_PER_MOLECULE,), dtype=string_type)
+        ### end from the dataset
+        ### start calculated by rdkit
+        num_atoms_ds = outfile.create_dataset("num_atoms", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        num_bonds_ds = outfile.create_dataset("num_bonds", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        num_heavy_atoms_ds = outfile.create_dataset("num_heavy_atoms", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        num_exact_Mol_Wt_ds = outfile.create_dataset("num_exact_Mol_Wt", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        MolLogP_ds = outfile.create_dataset("MolLogP", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        if do_Hdonors:
+            num_H_acceptors_ds = outfile.create_dataset("num_H_acceptors", (smile_count*NUM_MAPS_PER_MOLECULE,))
+            num_H_donors_ds = outfile.create_dataset("num_H_donors", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        num_heteroatoms_ds = outfile.create_dataset("num_ heteroatoms", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        num_valence_electrons_ds = outfile.create_dataset("num_valence_electrons", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        PMI_1_ds = outfile.create_dataset("PMI_1", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        PMI_2_ds = outfile.create_dataset("PMI_2", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        PMI_3_ds = outfile.create_dataset("PMI_3", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        spherocity_ds = outfile.create_dataset("spherocity", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        asphericity_ds = outfile.create_dataset("asphericity", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        eccentricity_ds = outfile.create_dataset("eccentricity", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        inertial_shape_factor_ds = outfile.create_dataset("inertial_shape_factor", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        radius_of_gyration_ds = outfile.create_dataset("radius_of_gyration", (smile_count*NUM_MAPS_PER_MOLECULE,))
+        # copied from output of df_maker above sigh
+        ### end from the dataset
+
+        ######################### start the loop ###################################
+        ## Das Loop
+        point_ptr = -1
+        for mol_idx in range(Num_of_molecules):
+            if mol_idx % 50 == 0:
+                print('Got to Molecule no. ', mol_idx)
+            ##### grab data from the dataframe
+            current_row = df.loc[[mol_idx]]
+            ##### grab a molecule! #####################################
+            m = projection.sdf_molecule.SDFMolecule(
+                 molecule=frame['Molecule'][mol_idx],
+                 smiles=SMILES_array[mol_idx],
+                 do_random_rotation=False,
+                 rotation_vector=[])
+            tidy_m = m
+            #tidy_m.molecule.UpdatePropertyCache() # this is now done in Molecule if you got SMILEs
+            ############### put molecule in an icosasphere #############
+            # puts the molecule into an icosasphere
+            i = Ico(m,DIVISION)
+            print(df['Compound ID'].iloc[mol_idx])
+            if smiles_count > 0:
+                smiles_string = SMILES_array[mol_idx]
+            #############################################################################################
+            ################################### THIS IS THE FIRST 60 NETS ###############################
+            #############################################################################################
+            for face_idx in range(NUM_UNWRAPPINGS_TO_DO):
+                for point_idx in range(NUM_DIRECTIONS_TO_DO):
+                    point_ptr += 1
+                    #### create the map (this does not plot a graphics object)
+                    i.plot2D(first_face=face_idx, point_idx=point_idx);
+                    fs=i.get_face_list()
+                    #i.draw2D()
+                    #### ####### grab the atom values or colours or whatever############
+                    Face._lookup_func = Face.face_get_masses
+                    values = [f.get_values() for f in fs]
+                    ################ create the measurables you want to record #############
+                    values_as_array = np.array(values) # this is hte icosahedron stuff
+                    num_atoms = tidy_m.molecule.GetNumAtoms() # number of atoms
+                    num_bonds = tidy_m.molecule.GetNumBonds() # number of bonds
+                    num_heavy_atoms = tidy_m.molecule.GetNumHeavyAtoms() # number of non-hydrogens
+                    num_exact_Mol_Wt = Descriptors.ExactMolWt(tidy_m.molecule) # exact molar weight
+                    MolLogP = Descriptors.MolLogP(tidy_m.molecule, includeHs=True) # octanol / water partitian coefficient
+                    num_heteroatoms = Descriptors.NumHeteroatoms(tidy_m.molecule)
+                    num_valence_electrons = Descriptors.NumValenceElectrons(tidy_m.molecule)
+                    if do_Hdonors:
+                        num_H_acceptors = Descriptors.NumHAcceptors(tidy_m.molecule)
+                        num_H_donors = Descriptors.NumHDonors(tidy_m.molecule)
+                    PMI_1 = rdMolDescriptors.CalcPMI1(tidy_m.molecule) # principal moment of inertia 1 (smallest)
+                    PMI_2 = rdMolDescriptors.CalcPMI2(tidy_m.molecule) # principal moment of inertia 2
+                    PMI_3 = rdMolDescriptors.CalcPMI3(tidy_m.molecule) # principal moment of inertia 3
+                    spherocity = rdMolDescriptors.CalcSpherocityIndex(tidy_m.molecule)
+                    asphericity = rdMolDescriptors.CalcAsphericity(tidy_m.molecule)
+                    eccentricity = rdMolDescriptors.CalcEccentricity(tidy_m.molecule)
+                    inertial_shape_factor = rdMolDescriptors.CalcInertialShapeFactor(tidy_m.molecule)
+                    radius_of_gyration = rdMolDescriptors.CalcRadiusOfGyration(tidy_m.molecule)
+
+                    ############ assign measurabless to columns ##########################
+                    ###### assign unfolding net
+                    icosahedron_ds[point_ptr] = values_as_array
+                    ###### assign stuff from the database
+                    compound_id = current_row.iloc[0]['Compound ID']
+                    compound_id_ds[point_ptr] = compound_id
+                    u0_atom = current_row.iloc[0]['u0_atom']
+                    u0_atom_ds[point_ptr] = u0_atom
+                    smiles = current_row.iloc[0]['smiles']
+                    smiles_ds[point_ptr] = smiles
+                    ######## assign stuff you calculated ######
+                    num_atoms_ds[point_ptr] = num_atoms
+                    num_bonds_ds[point_ptr] = num_bonds
+                    num_heavy_atoms_ds[point_ptr] =  num_heavy_atoms
+                    num_exact_Mol_Wt_ds[point_ptr] =  num_exact_Mol_Wt
+                    MolLogP_ds[point_ptr] =  MolLogP
+                    if do_Hdonors:
+                        num_H_acceptors_ds[point_ptr] =  num_H_acceptors
+                        num_H_donors_ds[point_ptr] =  num_H_donors
+                    num_heteroatoms_ds[point_ptr] =  num_heteroatoms
+                    num_valence_electrons_ds[point_ptr] =  num_valence_electrons
+                    PMI_1_ds[point_ptr] =  PMI_1
+                    PMI_2_ds[point_ptr] =  PMI_2
+                    PMI_3_ds[point_ptr] =  PMI_3
+                    spherocity_ds[point_ptr] =  spherocity
+                    asphericity_ds[point_ptr] =  asphericity
+                    eccentricity_ds[point_ptr] =  eccentricity
+                    inertial_shape_factor_ds[point_ptr] =  inertial_shape_factor
+                    radius_of_gyration_ds[point_ptr] =  radius_of_gyration
+            if verbose:
+                print('Finished the 60 standard unfoldings')
+            #############################################################################################
+            ######################## THE EXTRA AUGMENTATION STARTS HERE !################################
+            #############################################################################################
+            ### !!! Here we use SMILES strings not 3D coordinates ####
+            for extra_idx in range(NUM_EXTRA_MAPS_PER_MOLECULE):
+                ## this is it, regen the molecule each time you unwrap to move it about a bit!
+                m=Molecule(SMILES_array[mol_idx],sanitize=sanitize)
+                #print(m.molecule)
+                tidy_m = m
+                for point_idx in range(1): # hacky cos I didn't want to indent!!!!!
+                    # we pick the face and direction randomly for this single unfolding
+                    face_idx = random.choices([x for x in range(NUM_UNWRAPPINGS_TO_DO)], k=1)[0]
+                    point_idx = random.choices([x for x in range(NUM_DIRECTIONS_TO_DO)], k=1)[0]
+                    if verbose:
+                        print('Doing extra: face {}, direction {}'.format(face_idx, point_idx))
+                    point_ptr += 1
+                    #### create the map (this does not plot a graphics object)
+                    i.plot2D(first_face=face_idx, point_idx=point_idx);
+                    fs=i.get_face_list()
+                    #i.draw2D()
+                    #### ####### grab the atom values or colours or whatever############
+                    Face._lookup_func = Face.face_get_masses
+                    values = [f.get_values() for f in fs]
+                    ################ create the measurables you want to record #############
+                    values_as_array = np.array(values) # this is hte icosahedron stuff
+                    num_atoms = tidy_m.molecule.GetNumAtoms() # number of atoms
+                    num_bonds = tidy_m.molecule.GetNumBonds() # number of bonds
+                    num_heavy_atoms = tidy_m.molecule.GetNumHeavyAtoms() # number of non-hydrogens
+                    num_exact_Mol_Wt = Descriptors.ExactMolWt(tidy_m.molecule) # exact molar weight
+                    MolLogP = Descriptors.MolLogP(tidy_m.molecule, includeHs=True) # octanol / water partitian coefficient
+                    num_heteroatoms = Descriptors.NumHeteroatoms(tidy_m.molecule)
+                    num_valence_electrons = Descriptors.NumValenceElectrons(tidy_m.molecule)
+                    if do_Hdonors:
+                        num_H_acceptors = Descriptors.NumHAcceptors(tidy_m.molecule)
+                        num_H_donors = Descriptors.NumHDonors(tidy_m.molecule)
+                    PMI_1 = rdMolDescriptors.CalcPMI1(tidy_m.molecule) # principal moment of inertia 1 (smallest)
+                    PMI_2 = rdMolDescriptors.CalcPMI2(tidy_m.molecule) # principal moment of inertia 2
+                    PMI_3 = rdMolDescriptors.CalcPMI3(tidy_m.molecule) # principal moment of inertia 3
+                    spherocity = rdMolDescriptors.CalcSpherocityIndex(tidy_m.molecule)
+                    asphericity = rdMolDescriptors.CalcAsphericity(tidy_m.molecule)
+                    eccentricity = rdMolDescriptors.CalcEccentricity(tidy_m.molecule)
+                    inertial_shape_factor = rdMolDescriptors.CalcInertialShapeFactor(tidy_m.molecule)
+                    radius_of_gyration = rdMolDescriptors.CalcRadiusOfGyration(tidy_m.molecule)
+
+                    ############ assign measurabless to columns ##########################
+                    ###### assign unfolding net
+                    icosahedron_ds[point_ptr] = values_as_array
+                    #charge_ds[point_ptr] = charge
+                    ###### assign stuff from the database
+                    compound_id = current_row.iloc[0]['Compound ID']
+                    compound_id_ds[point_ptr] = compound_id
+                    u0_atom = current_row.iloc[0]['u0_atom']
+                    u0_atom_ds[point_ptr] = u0_atom
+                    smiles = current_row.iloc[0]['smiles']
+                    smiles_ds[point_ptr] = smiles
+                    ######## assign stuff you calculated ######
+                    num_atoms_ds[point_ptr] = num_atoms
+                    num_bonds_ds[point_ptr] = num_bonds
+                    num_heavy_atoms_ds[point_ptr] =  num_heavy_atoms
+                    num_exact_Mol_Wt_ds[point_ptr] =  num_exact_Mol_Wt
+                    MolLogP_ds[point_ptr] =  MolLogP
+                    if do_Hdonors:
+                        num_H_acceptors_ds[point_ptr] =  num_H_acceptors
+                        num_H_donors_ds[point_ptr] =  num_H_donors
+                    num_heteroatoms_ds[point_ptr] =  num_heteroatoms
+                    num_valence_electrons_ds[point_ptr] =  num_valence_electrons
+                    PMI_1_ds[point_ptr] =  PMI_1
+                    PMI_2_ds[point_ptr] =  PMI_2
+                    PMI_3_ds[point_ptr] =  PMI_3
+                    spherocity_ds[point_ptr] =  spherocity
+                    asphericity_ds[point_ptr] =  asphericity
+                    eccentricity_ds[point_ptr] =  eccentricity
+                    inertial_shape_factor_ds[point_ptr] =  inertial_shape_factor
+                    radius_of_gyration_ds[point_ptr] =  radius_of_gyration
+
+
+        outfile.close()
+        #outfile_expanded.close()
+        #i.draw2D()
+
+        return
