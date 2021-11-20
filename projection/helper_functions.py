@@ -693,6 +693,8 @@ def create_diff_conformer_dataset_from_QM7(
         SMILES_array=[],
         num_out_files=1,
         extra_augmentation='conformer',
+        rotamer_source='df',
+        conformer_source='df',
         verbose=False):
     """ Creates the dataset as a hdf5 file
     QM7 has both smiles and 3d coords
@@ -797,11 +799,20 @@ def create_diff_conformer_dataset_from_QM7(
             ##### grab data from the dataframe
             current_row = df.loc[[mol_idx]]
             ##### grab a molecule! #####################################
-            m = projection.sdf_molecule.SDFMolecule(
-                 molecule=frame['Molecule'][mol_idx],
-                 smiles=SMILES_array[mol_idx],
-                 do_random_rotation=False,
-                 rotation_vector=[])
+            try:
+                if rotamer_source == 'frame':
+                    # taking data from the sdf file, good 3D data, bad SMILES
+                    m = projection.sdf_molecule.SDFMolecule(
+                        molecule=frame['Molecule'][mol_idx],
+                        smiles=SMILES_array[mol_idx],
+                        do_random_rotation=False,
+                        rotation_vector=[])
+                elif rotamer_source == 'df':
+                    # taking data from the csv file, good SMILES, no 3D data
+                    m = Molecule(SMILES_array[mol_idx], sanitize=sanitize)
+            except Exception as e:
+                print("moo")
+                raise e
             tidy_m = m
             #tidy_m.molecule.UpdatePropertyCache() # this is now done in Molecule if you got SMILEs
             ############### put molecule in an icosasphere #############
@@ -881,7 +892,16 @@ def create_diff_conformer_dataset_from_QM7(
             ### !!! Here we use SMILES strings not 3D coordinates ####
             for extra_idx in range(NUM_EXTRA_MAPS_PER_MOLECULE):
                 ## this is it, regen the molecule each time you unwrap to move it about a bit!
-                m=Molecule(SMILES_array[mol_idx],sanitize=sanitize)
+                if conformer_source == 'frame':
+                    # taking data from the sdf file, good 3D data, bad SMILES
+                    m = projection.sdf_molecule.SDFMolecule(
+                        molecule=frame['Molecule'][mol_idx],
+                        smiles=SMILES_array[mol_idx],
+                        do_random_rotation=False,
+                        rotation_vector=[])
+                elif conformer_source == 'df':
+                    # taking data from the csv file, good SMILES, no 3D data
+                    m = Molecule(SMILES_array[mol_idx], sanitize=sanitize)
                 #print(m.molecule)
                 tidy_m = m
                 for point_idx in range(1): # hacky cos I didn't want to indent!!!!!

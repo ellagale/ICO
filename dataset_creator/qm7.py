@@ -115,6 +115,8 @@ h.create_diff_conformer_dataset_from_QM7(
         SMILES_array=SMILES_array,
         num_out_files=1,
         extra_augmentation=extra_augmentation,
+        rotamer_source='df',
+        conformer_source='df',
         verbose=False)
 
 hf.close()
