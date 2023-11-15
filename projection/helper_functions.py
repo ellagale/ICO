@@ -976,3 +976,21 @@ def create_diff_conformer_dataset_from_QM7(
         #i.draw2D()
 
         return
+
+def generate_structure_from_smiles(smiles):
+
+    # Generate a 3D structure from smiles
+
+    mol = Chem.MolFromSmiles(smiles)
+    mol = Chem.AddHs(mol)
+
+    status = AllChem.EmbedMolecule(mol)
+    status = AllChem.UFFOptimizeMolecule(mol)
+
+    conformer = mol.GetConformer()
+    coordinates = conformer.GetPositions()
+    coordinates = np.array(coordinates)
+
+    #atoms = get_atoms(mol)
+
+    return coordinates
