@@ -30,7 +30,7 @@ import projection.helper_functions as h
 #############################################################
 save_dir = r'F:\Nextcloud\science\Datasets\icostar_processed'
 data_dir = r'F:\Nextcloud\science\Datasets'
-input_file = 'Lipophilicity.csv'
+input_file = 'SAMPL.csv'
 input_file_location = os.path.join(data_dir, input_file)
 df = pd.read_csv(input_file_location)
 print('Example data')
@@ -55,7 +55,7 @@ out_filename = 'TEST2'
 
 print('Doing a test of 5 molecules before we do the big one')
 
-h.Create_Diff_Conformer_Dataset_From_Lipo(DIVISION=4,
+h.Create_Diff_Conformer_Dataset_From_SAMPL(DIVISION=4,
                                           df=df,
                                           save_dir=save_dir,
                                           data_dir=data_dir,
@@ -78,7 +78,7 @@ hf = h5py.File(os.path.join(save_dir, out_filename), 'r')
 n1 = hf['num_exact_Mol_Wt']
 print(n1.value)
 print(len(n1))
-print(hf['Compound ID'])
+print(hf['iupac'])
 print('keys for the created hf file')
 print(hf.keys())
 hf.close()
@@ -95,8 +95,8 @@ extra_augmentation='conformer'
 print('Doing {} maps per molecule using the {} setting'.format(NUM_MAPS_PER_MOLECULE, extra_augmentation))
 # ## THIS DOES THE DATASET BUILDING!
 
-out_filename = 'Lipophilicity_augmented_expanded.hdf5'
-h.Create_Diff_Conformer_Dataset_From_Lipo(DIVISION=4,
+out_filename = 'SAMPL_augmented_expanded.hdf5'
+h.Create_Diff_Conformer_Dataset_From_SAMPL(DIVISION=4,
                                           df=df,
                                           save_dir=save_dir,
                                           data_dir=data_dir,
